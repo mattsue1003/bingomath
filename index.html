@@ -2,22 +2,22 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>算術賓果產生器</title>
-    <!-- 引入 Tailwind CSS (樣式) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>愛迪樂算數賓果王</title>
+    <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入 React 和 ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- 引入 Babel (讓瀏覽器看得懂 JSX) -->
+    <!-- 引入 Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
-        /* 列印專用樣式 */
+        /* --- 列印與 PDF 核心修正 --- */
         @media print {
             @page {
-                size: A4 portrait;
-                margin: 0;
+                size: A4 portrait; /* 強制直向 */
+                margin: 0;         /* 嘗試清除邊界，但手機通常會忽略 */
             }
             body {
                 background: white;
@@ -27,15 +27,25 @@
             .no-print {
                 display: none !important;
             }
+            /* 修正重點：高度縮減以容納手機邊界 */
             .page-break-container {
-                height: 148.5mm; /* A4 高度的一半 */
-                width: 210mm;
+                height: 135mm;      /* 從 148.5mm 改為 135mm，預留邊界空間 */
+                width: 100%;        /* 讓寬度自適應列印範圍 */
+                max-width: 210mm;
                 box-sizing: border-box;
-                page-break-inside: avoid;
-                padding: 10mm;
+                page-break-inside: avoid; /* 禁止從中間切斷 */
+                padding: 5mm;       /*稍微縮小內距*/
+                margin: 0 auto;     /* 置中 */
             }
             .break-after-page {
                 page-break-after: always;
+            }
+            /* 強制內容垂直置中，避免縮減高度後版面跑掉 */
+            .print-vertical-center {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                height: 100%;
             }
         }
     </style>
@@ -46,54 +56,32 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- Icons (SVG Components) ---
-        const IconCalculator = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>
-        );
-        const IconSettings = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.39a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-        );
-        const IconRefreshCw = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-        );
-        const IconPlay = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-        );
-        const IconPrinter = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
-        );
-        const IconX = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        );
-        const IconFileText = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-        );
-        const IconArrowDown = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
-        );
+        // --- Icons ---
+        const IconCalculator = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>;
+        const IconSettings = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.39a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>;
+        const IconRefreshCw = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>;
+        const IconPlay = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>;
+        const IconPrinter = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>;
+        const IconX = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
+        const IconFileText = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>;
+        const IconArrowDown = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>;
+        const IconMenu = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>;
 
         // --- Helper Functions ---
-        const getRandomInt = (min, max) => {
-            return Math.floor(Math.random() * (max - min + 1)) + min;
-        };
+        const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
         const generateMathProblem = (target) => {
             const isAddition = Math.random() > 0.5;
-
             if (isAddition) {
-                // 強制減法條件
                 if (target < 2) {
                     const b = getRandomInt(1, 10);
-                    const a = target + b;
-                    return `${a} - ${b}`;
+                    return `${target + b} - ${b}`;
                 }
                 const a = getRandomInt(1, target - 1);
-                const b = target - a;
-                return `${a} + ${b}`;
+                return `${a} + ${target - a}`;
             } else {
                 const b = getRandomInt(1, 15);
-                const a = target + b;
-                return `${a} - ${b}`;
+                return `${target + b} - ${b}`;
             }
         };
 
@@ -108,14 +96,16 @@
 
         // --- Main Component ---
         function ArithmeticBingo() {
-            const [title, setTitle] = useState('數學神童賓果王');
+            const [title, setTitle] = useState('愛迪樂算數賓果王');
             const [minNum, setMinNum] = useState(1);
             const [maxNum, setMaxNum] = useState(25);
             const [playerCount, setPlayerCount] = useState(2);
             const [titleFontSize, setTitleFontSize] = useState(24);
+            const [showAnswers, setShowAnswers] = useState(false);
             
             const [boards, setBoards] = useState([]);
-            const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+            const [isDrawerOpen, setIsDrawerOpen] = useState(false); // 抽籤工具
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false); // 手機版側邊選單
             
             const [drawPool, setDrawPool] = useState([]);
             const [currentDraw, setCurrentDraw] = useState(null);
@@ -124,30 +114,22 @@
             const generateBoards = () => {
                 const rangeSize = maxNum - minNum + 1;
                 if (rangeSize < 16) {
-                    alert(`數字範圍太小！目前範圍只有 ${rangeSize} 個數字，至少需要 16 個數字 (4x4)。`);
+                    alert(`數字範圍太小！目前範圍只有 ${rangeSize} 個數字，至少需要 16 個數字。`);
                     return;
                 }
-
                 const newBoards = [];
                 const fullRange = Array.from({ length: rangeSize }, (_, i) => minNum + i);
 
                 for (let i = 0; i < playerCount; i++) {
                     const shuffledRange = shuffleArray(fullRange);
                     const selectedNumbers = shuffledRange.slice(0, 16);
-                    
-                    const cells = selectedNumbers.map(num => ({
-                        value: num,
-                        problem: generateMathProblem(num)
-                    }));
-
-                    newBoards.push({
-                        id: i + 1,
-                        cells: cells
-                    });
+                    const cells = selectedNumbers.map(num => ({ value: num, problem: generateMathProblem(num) }));
+                    newBoards.push({ id: i + 1, cells: cells });
                 }
-
                 setBoards(newBoards);
                 resetDrawTool(fullRange);
+                // 手機版產生後自動收合選單
+                if (window.innerWidth < 1024) setIsSidebarOpen(false);
             };
 
             const resetDrawTool = (range) => {
@@ -165,39 +147,60 @@
             };
 
             const drawNextNumber = () => {
-                if (currentDraw) {
-                    setDrawnHistory(prev => [currentDraw, ...prev]);
-                }
-
-                if (drawPool.length === 0) {
-                    setCurrentDraw(null);
-                    return;
-                }
-                
+                if (currentDraw) setDrawnHistory(prev => [currentDraw, ...prev]);
+                if (drawPool.length === 0) { setCurrentDraw(null); return; }
                 const nextVal = drawPool[0];
                 const problem = generateMathProblem(nextVal);
-                const newItem = { value: nextVal, problem };
-
-                setCurrentDraw(newItem);
+                setCurrentDraw({ value: nextVal, problem });
                 setDrawPool(prev => prev.slice(1));
             };
 
             return (
-                <div className="min-h-screen">
-                    {/* 左側控制面板 */}
-                    <div className="fixed top-0 left-0 h-full w-80 bg-white shadow-lg z-20 overflow-y-auto no-print border-r border-gray-200">
-                        <div className="p-6">
-                            <h1 className="text-2xl font-bold text-blue-600 mb-6 flex items-center gap-2">
-                                <IconCalculator />
-                                算術賓果產生器
-                            </h1>
+                <div className="min-h-screen relative">
+                    {/* 手機版頂部 Header (包含漢堡選單) */}
+                    <div className="lg:hidden flex items-center justify-between bg-white p-4 shadow-sm border-b no-print sticky top-0 z-30">
+                        <h1 className="text-xl font-bold text-blue-600 flex items-center gap-2">
+                            <IconCalculator /> 賓果產生器
+                        </h1>
+                        <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded">
+                            <IconMenu />
+                        </button>
+                    </div>
+
+                    {/* 遮罩 (手機版選單打開時顯示) */}
+                    {isSidebarOpen && (
+                        <div className="fixed inset-0 bg-black/50 z-30 lg:hidden no-print" onClick={() => setIsSidebarOpen(false)} />
+                    )}
+
+                    {/* 左側控制面板 (響應式調整) */}
+                    <div className={`
+                        fixed top-0 left-0 h-full w-80 bg-white shadow-lg z-40 overflow-y-auto no-print border-r border-gray-200 transition-transform duration-300 ease-in-out
+                        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+                    `}>
+                        <div className="p-6 relative">
+                            {/* 手機版關閉按鈕 */}
+                            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden absolute top-4 right-4 p-2 text-gray-500 hover:bg-gray-100 rounded">
+                                <IconX />
+                            </button>
+
+                            <div className="mb-6 mt-2 lg:mt-0">
+                                <h1 className="text-2xl font-bold text-blue-600 flex items-center gap-2 mb-3">
+                                    <IconCalculator />
+                                    算術賓果產生器
+                                </h1>
+                                {/* 作者資訊 */}
+                                <div className="text-sm text-gray-600 space-y-1.5 pl-1 border-l-2 border-blue-100 ml-1">
+                                    <p>設計者：<a href="https://www.facebook.com/chungmenghsiu" target="_blank" className="text-blue-500 hover:underline">鍾孟修 職能治療師</a></p>
+                                    <p>粉絲專頁：<a href="https://www.facebook.com/profile.php?id=100063748491881" target="_blank" className="text-blue-500 hover:underline">鍾孟修Matt-職能治療師</a></p>
+                                    <p>新書推薦：<a href="https://www.books.com.tw/products/0011022363?sloc=main" target="_blank" className="text-blue-500 hover:underline">讓你健康不失智的體智能</a></p>
+                                </div>
+                            </div>
 
                             <div className="space-y-6">
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-gray-600">賓果單標題</label>
                                     <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
                                 </div>
-
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-gray-600">數字範圍 (最小需 16 個)</label>
                                     <div className="flex gap-2 items-center">
@@ -207,50 +210,45 @@
                                     </div>
                                     <p className="text-xs text-gray-500">目前範圍共 {maxNum - minNum + 1} 個數字</p>
                                 </div>
-
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-gray-600">參加人數 (產生張數)</label>
                                     <input type="number" min={1} max={100} value={playerCount} onChange={(e) => setPlayerCount(parseInt(e.target.value) || 1)} className="w-full px-3 py-2 border rounded-md" />
                                 </div>
-
                                 <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-gray-600">標題字體大小 ({titleFontSize}px)</label>
-                                    <input type="range" min="16" max="40" value={titleFontSize} onChange={(e) => setTitleFontSize(parseInt(e.target.value))} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" />
+                                    <label className="text-sm font-semibold text-gray-600">外觀設定</label>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <input type="checkbox" id="showAnswers" checked={showAnswers} onChange={(e) => setShowAnswers(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
+                                        <label htmlFor="showAnswers" className="text-sm text-gray-700">顯示角落答案</label>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                         <label className="text-xs text-gray-500">標題大小 ({titleFontSize}px)</label>
+                                         <input type="range" min="16" max="40" value={titleFontSize} onChange={(e) => setTitleFontSize(parseInt(e.target.value))} className="w-full h-2 bg-gray-200 rounded-lg cursor-pointer" />
+                                    </div>
                                 </div>
-
                                 <div className="pt-4 space-y-3">
-                                    <button onClick={generateBoards} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm">
+                                    <button onClick={generateBoards} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2">
                                         <IconRefreshCw /> 重新產生題目
                                     </button>
-                                    
-                                    <button onClick={() => setIsDrawerOpen(true)} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm">
+                                    <button onClick={() => { setIsDrawerOpen(true); setIsSidebarOpen(false); }} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center justify-center gap-2">
                                         <IconPlay /> 開啟抽籤工具
                                     </button>
-
-                                    <button onClick={handlePrint} className="w-full py-3 bg-gray-800 hover:bg-gray-900 text-white rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm">
+                                    <button onClick={handlePrint} className="w-full py-3 bg-gray-800 hover:bg-gray-900 text-white rounded-lg flex items-center justify-center gap-2">
                                         <IconPrinter /> 下載 PDF (列印)
                                     </button>
-                                </div>
-                                <div className="bg-blue-50 p-3 rounded text-xs text-blue-800 leading-relaxed">
-                                    <strong>PDF 下載說明：</strong><br/>
-                                    點擊按鈕後會開啟列印視窗，請在「目的地」選擇 <strong>「另存為 PDF」</strong>。<br/>
-                                    系統已設定為自動排版 (A4 一頁兩張)。
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     {/* 主要預覽區域 */}
-                    <div className="pl-80 print:pl-0 min-h-screen">
-                        <div className="p-8 print:p-0">
-                            <div className="mb-6 no-print flex justify-between items-end border-b pb-4">
+                    <div className="lg:pl-80 print:pl-0 min-h-screen transition-all duration-300">
+                        <div className="p-4 lg:p-8 print:p-0">
+                            <div className="mb-6 no-print flex flex-col sm:flex-row justify-between items-start sm:items-end border-b pb-4 gap-2">
                                 <div>
                                     <h2 className="text-2xl font-bold text-gray-800">題目預覽</h2>
-                                    <p className="text-gray-500 mt-1">目前共有 {boards.length} 張賓果單，每張題目皆不相同。</p>
+                                    <p className="text-gray-500 mt-1">目前共有 {boards.length} 張賓果單。</p>
                                 </div>
-                                <div className="text-right text-sm text-gray-500">
-                                    範圍: {minNum}-{maxNum} | 4x4 算術題
-                                </div>
+                                <div className="text-sm text-gray-500">範圍: {minNum}-{maxNum}</div>
                             </div>
 
                             <div className="w-full max-w-[210mm] mx-auto bg-white print:max-w-none">
@@ -258,41 +256,44 @@
                                     {boards.map((board, index) => {
                                         const isEndOfPage = (index + 1) % 2 === 0;
                                         return (
-                                            <div key={board.id} className="print:h-[148mm] print:overflow-hidden print:pt-4 relative page-break-container">
+                                            <div key={board.id} className="print:block relative page-break-container">
+                                                {/* 手機版/預覽版切割線 (列印隱藏或由 CSS 控制) */}
                                                 {!isEndOfPage && index !== boards.length - 1 && (
                                                     <div className="hidden print:block absolute bottom-0 left-0 w-full border-b border-dashed border-gray-400">
                                                         <span className="absolute left-1/2 -top-3 bg-white px-2 text-xs text-gray-400 transform -translate-x-1/2">裁切線</span>
                                                     </div>
                                                 )}
 
-                                                <div className="p-8 border-2 border-gray-800 rounded-xl print:border-0 print:p-4 print:mx-8 h-full flex flex-col box-border">
-                                                    <div className="text-center mb-4">
+                                                <div className="p-4 sm:p-8 border-2 border-gray-800 rounded-xl print:border-0 print:p-0 print:rounded-none h-full box-border print-vertical-center">
+                                                    <div className="text-center mb-2 print:mb-2">
                                                         <h2 className="font-bold text-gray-900 leading-tight" style={{ fontSize: `${titleFontSize}px` }}>
                                                             {title}
                                                         </h2>
-                                                        <div className="flex justify-between items-center mt-2 px-2 text-sm text-gray-600 border-b-2 border-gray-800 pb-1">
-                                                            <span>姓名：_____________</span>
-                                                            <span>班級：_____________</span>
+                                                        <div className="flex justify-between items-center mt-2 px-1 text-sm text-gray-600 border-b-2 border-gray-800 pb-1">
+                                                            <span>姓名：__________</span>
+                                                            <span>連線數：__________</span>
                                                             <span>No. {board.id}</span>
                                                         </div>
                                                     </div>
 
-                                                    <div className="flex-1">
-                                                        <div className="grid grid-cols-4 gap-0 border-2 border-gray-800 h-full">
+                                                    <div className="flex-1 w-full aspect-square sm:aspect-auto">
+                                                        <div className="grid grid-cols-4 gap-0 border-2 border-gray-800 h-full w-full">
                                                             {board.cells.map((cell, cIdx) => (
-                                                                <div key={cIdx} className="relative flex items-center justify-center border border-gray-800 p-2">
-                                                                    <span className="text-xl font-bold font-mono tracking-wider">
+                                                                <div key={cIdx} className="relative flex items-center justify-center border border-gray-800 p-1">
+                                                                    <span className="text-lg sm:text-xl font-bold font-mono tracking-wider">
                                                                         {cell.problem}
                                                                     </span>
-                                                                    <span className="absolute bottom-1 right-1 text-[10px] text-gray-400 no-print">
-                                                                        ({cell.value})
-                                                                    </span>
+                                                                    {showAnswers && (
+                                                                        <span className="absolute bottom-0.5 right-0.5 text-[10px] text-gray-400">
+                                                                            ({cell.value})
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             ))}
                                                         </div>
                                                     </div>
 
-                                                    <div className="mt-2 text-center text-xs text-gray-400 print:text-black">
+                                                    <div className="mt-1 text-center text-[10px] sm:text-xs text-gray-400 print:text-black">
                                                         規則：計算格子內的算式，若符合主持人抽出的數字即可圈選。先連成 3 條線者獲勝！
                                                     </div>
                                                 </div>
@@ -310,14 +311,9 @@
                         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print backdrop-blur-sm">
                             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
                                 <div className="bg-blue-600 p-4 flex justify-between items-center text-white">
-                                    <h3 className="text-xl font-bold flex items-center gap-2">
-                                        <IconSettings /> 主持人抽籤工具
-                                    </h3>
-                                    <button onClick={() => setIsDrawerOpen(false)} className="p-1 hover:bg-blue-500 rounded-full transition-colors">
-                                        <IconX />
-                                    </button>
+                                    <h3 className="text-xl font-bold flex items-center gap-2"><IconSettings /> 主持人抽籤工具</h3>
+                                    <button onClick={() => setIsDrawerOpen(false)} className="p-1 hover:bg-blue-500 rounded-full"><IconX /></button>
                                 </div>
-
                                 <div className="p-6 flex-1 overflow-y-auto">
                                     <div className="flex flex-col items-center justify-center mb-8 py-8 bg-gray-50 rounded-xl border border-gray-200 min-h-[200px]">
                                         {currentDraw ? (
@@ -325,52 +321,31 @@
                                                 <div className="text-sm text-gray-500 uppercase tracking-wide mb-2">Current Question</div>
                                                 <div className="text-6xl font-black text-blue-600 mb-4">{currentDraw.problem}</div>
                                                 <div className="text-sm text-amber-600 font-bold bg-amber-50 px-4 py-1 rounded-full border border-amber-200 inline-flex items-center gap-1">
-                                                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                                                    答案尚未揭曉
+                                                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span> 答案尚未揭曉
                                                 </div>
                                                 <div className="mt-2 text-xs text-gray-400">(抽取下一題後，此題將進入紀錄並顯示答案)</div>
                                             </div>
                                         ) : (
                                             <div className="text-gray-400 text-xl font-medium py-8 text-center">
-                                                {drawPool.length > 0 && drawnHistory.length === 0 && "準備好了嗎？點擊下方按鈕開始抽題！"}
-                                                {drawPool.length === 0 && !currentDraw && "所有題目已抽取完畢！"}
+                                                {drawPool.length > 0 && drawnHistory.length === 0 && "準備好了嗎？"}
+                                                {drawPool.length === 0 && !currentDraw && "題目已抽完！"}
                                             </div>
                                         )}
                                     </div>
-
-                                    <div className="flex gap-4 mb-8">
-                                        <button onClick={drawNextNumber} disabled={drawPool.length === 0 && !currentDraw} className={`flex-1 py-4 text-xl font-bold rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2 ${drawPool.length === 0 && !currentDraw ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 text-white'}`}>
-                                            {drawPool.length === 0 && !currentDraw ? '已結束' : (
-                                                <><IconFileText /> {currentDraw ? '確認並抽取下一題' : '開始抽題'}</>
-                                            )}
-                                        </button>
-                                    </div>
-
-                                    <div>
-                                        <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2 border-b pb-2">
-                                            <IconArrowDown /> 已開出紀錄 (含答案)
-                                            <span className="text-xs font-normal text-gray-500 ml-auto">共 {drawnHistory.length} 題</span>
-                                        </h4>
-                                        {drawnHistory.length === 0 ? (
-                                            <p className="text-sm text-gray-400 italic">尚無歷史紀錄</p>
-                                        ) : (
-                                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
-                                                {drawnHistory.map((item, idx) => (
-                                                    <div key={idx} className="bg-white p-2 rounded text-center border-2 border-gray-100 shadow-sm">
-                                                        <div className="text-xs text-gray-400 mb-1">{item.problem}</div>
-                                                        <div className="font-bold text-xl text-blue-600 border-t border-gray-100 pt-1">{item.value}</div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="bg-gray-50 p-4 border-t text-sm text-gray-500 flex justify-between items-center">
-                                    <span>範圍: {minNum} - {maxNum}</span>
-                                    <button onClick={() => { if(confirm("確定要重置抽籤進度嗎？")) { const fullRange = Array.from({ length: maxNum - minNum + 1 }, (_, i) => minNum + i); resetDrawTool(fullRange); } }} className="text-red-500 hover:text-red-700 font-semibold">
-                                        重置進度
+                                    <button onClick={drawNextNumber} disabled={drawPool.length === 0 && !currentDraw} className={`w-full py-4 text-xl font-bold rounded-xl shadow-md mb-8 flex items-center justify-center gap-2 ${drawPool.length === 0 && !currentDraw ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 text-white'}`}>
+                                        <IconFileText /> {currentDraw ? '確認並抽取下一題' : '開始抽題'}
                                     </button>
+                                    <div>
+                                        <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2 border-b pb-2"><IconArrowDown /> 已開出紀錄 (含答案) <span className="text-xs font-normal text-gray-500 ml-auto">共 {drawnHistory.length} 題</span></h4>
+                                        <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                                            {drawnHistory.map((item, idx) => (
+                                                <div key={idx} className="bg-white p-2 rounded text-center border-2 border-gray-100 shadow-sm">
+                                                    <div className="text-xs text-gray-400 mb-1">{item.problem}</div>
+                                                    <div className="font-bold text-xl text-blue-600 border-t border-gray-100 pt-1">{item.value}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
