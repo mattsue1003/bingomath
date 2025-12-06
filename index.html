@@ -4,65 +4,117 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>愛迪樂算數賓果王</title>
-    <!-- 引入 Tailwind CSS -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 React 和 ReactDOM -->
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- 引入 Babel -->
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- jsPDF (用於直接下載 PDF) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
     <style>
-        /* --- 列印與 PDF 核心修正 (針對手機與電腦版面優化) --- */
+        /* --- 螢幕顯示樣式 --- */
+        body { font-family: 'Noto Sans TC', sans-serif; }
+
+        /* --- 列印專用樣式 (針對電腦版列印功能的修正) --- */
         @media print {
             @page {
                 size: A4 portrait;
-                margin: 5mm; /* 設定極小邊界，讓瀏覽器自己決定安全範圍 */
+                margin: 0; /* 關鍵：清除瀏覽器預設邊界，由我們自己控制 */
             }
             body {
                 background: white;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-                width: 100%;
                 margin: 0;
                 padding: 0;
+                width: 210mm; /* 強制 A4 寬度 */
             }
             .no-print {
                 display: none !important;
             }
             
-            /* 1. 外層容器：負責佔位與置中 */
-            .page-break-container {
-                height: 130mm;      /* 縮小高度至 130mm (130*2=260mm)，預留 37mm 給手機強制邊界，確保一頁兩張 */
+            /* 列印容器：強制置中 */
+            .print-container {
                 width: 100%;
-                display: flex;      /* 關鍵：使用 Flexbox */
-                justify-content: center; /* 水平置中 */
-                align-items: center;     /* 垂直置中 */
-                page-break-inside: avoid;
-                break-inside: avoid;
+                margin: 0;
+                padding: 0;
+                display: block;
             }
 
-            /* 2. 內層卡片：實際內容與邊框 */
-            .print-card-content {
-                width: 180mm;       /* 固定寬度，確保在 A4 (210mm) 上左右留白均衡 */
-                height: 120mm;      /* 固定高度，確保內容不溢出 */
-                border: 2px solid #1f2937 !important; /* 強制顯示邊框 */
-                border-radius: 12px;
-                padding: 10px;
+            /* 每一頁的包裝 */
+            .print-page {
+                width: 210mm;
+                height: 297mm;
+                page-break-after: always;
+                position: relative;
+                overflow: hidden;
+            }
+
+            /* 卡片定位：絕對定位確保位置準確 */
+            .print-card-top {
+                position: absolute;
+                top: 15mm;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 180mm;
+                height: 125mm;
                 box-sizing: border-box;
+            }
+
+            .print-card-bottom {
+                position: absolute;
+                top: 158mm; /* 下半部位置 */
+                left: 50%;
+                transform: translateX(-50%);
+                width: 180mm;
+                height: 125mm;
+                box-sizing: border-box;
+            }
+
+            /* 裁切線 */
+            .print-cut-line {
+                position: absolute;
+                top: 148.5mm;
+                left: 10mm;
+                right: 10mm;
+                border-top: 1px dashed #999;
+                text-align: center;
+            }
+            .print-cut-label {
+                background: white;
+                padding: 0 10px;
+                font-size: 12px;
+                color: #666;
+                position: relative;
+                top: -10px;
+            }
+
+            /* 內容樣式 */
+            .bingo-border {
+                border: 2px solid black;
+                width: 100%;
+                height: 100%;
                 display: flex;
                 flex-direction: column;
-            }
-
-            .break-after-page {
-                page-break-after: always;
+                padding: 10px;
             }
             
-            /* 隱藏原本螢幕用的外距與邊框，避免干擾列印樣式 */
-            .screen-style-reset {
-                border: none !important;
-                padding: 0 !important;
-                margin: 0 !important;
+            .bingo-grid {
+                flex: 1;
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                border: 2px solid black;
+            }
+            
+            .bingo-cell {
+                border: 1px solid black;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 18px;
+                font-weight: bold;
+                position: relative;
             }
         }
     </style>
@@ -72,17 +124,19 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
+        const { jsPDF } = window.jspdf;
 
         // --- Icons ---
         const IconCalculator = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>;
-        const IconSettings = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.39a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>;
         const IconRefreshCw = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>;
         const IconPlay = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>;
+        const IconDownload = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>;
         const IconPrinter = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>;
         const IconX = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
         const IconFileText = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>;
         const IconArrowDown = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>;
         const IconMenu = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>;
+        const IconSettings = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.39a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>;
 
         // --- Helper Functions ---
         const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -123,6 +177,7 @@
             const [boards, setBoards] = useState([]);
             const [isDrawerOpen, setIsDrawerOpen] = useState(false); 
             const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
+            const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
             
             const [drawPool, setDrawPool] = useState([]);
             const [currentDraw, setCurrentDraw] = useState(null);
@@ -158,8 +213,174 @@
                 generateBoards();
             }, []);
 
+            // 原本的列印功能 (保留給電腦用戶)
             const handlePrint = () => {
                 window.print();
+            };
+
+            // 新增：直接產生 PDF 下載 (解決手機預覽與跑版問題)
+            const handleDownloadPDF = () => {
+                setIsGeneratingPdf(true);
+                setTimeout(() => {
+                    try {
+                        // 建立 A4 PDF (portrait)
+                        const doc = new jsPDF({
+                            orientation: 'p',
+                            unit: 'mm',
+                            format: 'a4'
+                        });
+
+                        // 設定中文字型 (由於 jsPDF 預設不支援中文，這裡使用標準字體，若需特定字體需載入 base64，
+                        // 這裡為了輕量化，我們用圖形繪製或基本 ASCII，
+                        // 但為了顯示中文，我們需要一個支援中文的字體。
+                        // 由於瀏覽器環境限制，最穩定的方法是使用內建字體，但 jsPDF 內建只有英文。
+                        // 為了讓中文正常顯示，我們使用 HTML2Canvas 混合方法或簡單的 jsPDF 添加字體會增加檔案大小。
+                        // 
+                        // 改進方案：我們直接手動繪製格線與數字，但中文標題若無字體會變亂碼。
+                        // 這裡我們採用一個聰明的做法：不依賴龐大的中文字體檔，
+                        // 而是提示使用者「系統會嘗試產生 PDF」。
+                        // 
+                        // 實際上，要在單一檔案支援 jsPDF 中文，必須內嵌字體 base64 (約 2-5MB)。
+                        // 為了保持檔案輕量，我們這裡使用 addFont 載入一個雲端字體是不行的 (CORS)。
+                        // 
+                        // 退而求其次方案：
+                        // 如果是手機直接下載，我們使用標準字體，標題可能會是亂碼。
+                        // 但我們可以設定 doc.setFont("Courier") 等。
+                        // 
+                        // 為了完美解決「手機直接下載」且「有中文」，最穩定的方式其實還是回到 window.print() 但優化 CSS。
+                        // 既然使用者反應強烈，我會加入一個開源的 NotoSansTC 縮減版 base64，或者...
+                        // 
+                        // 等等，使用者說 "手機按下載不要列印預覽"。
+                        // 這代表必須用 jsPDF。但 jsPDF 沒有中文字體就是亂碼。
+                        // 
+                        // 替代方案：我們使用 jsPDF 繪製框線，數字(英文)沒問題。
+                        // 標題部分，我們可以用內建字體顯示 "Bingo No.1" 這種英文，或者...
+                        // 
+                        // 為了不讓程式碼爆量，我們將使用 jsPDF 的 addFont 介面，但這裡不放幾 MB 的字串。
+                        // 我們改用 html2canvas 來截圖產生 PDF！這是最通用的方式。
+                        // 雖然 html2canvas 比較慢，但能保證所見即所得（包含中文）。
+                    } catch (e) {
+                        console.error(e);
+                        alert("PDF 產生失敗，請重試");
+                    }
+                    setIsGeneratingPdf(false);
+                }, 100);
+                
+                // 實際上，最佳解是：用 JS 計算座標畫線 (極快)，但中文用圖片貼上？太複雜。
+                // 還是用 window.print() 最好，只是使用者的手機 CSS 跑版。
+                // 我上面的 CSS @media print 已經大幅修正了置中問題。
+                // 
+                // 若堅持要 "直接下載 PDF"，我這裡實作一個基於 jsPDF 的繪圖邏輯。
+                // 為了支援中文，我會把標題改成圖片或簡單的英文，或者... 
+                // 
+                // 決定：採用 jsPDF 繪製線條與數字 (向量清晰)，標題若無法顯示中文，
+                // 我們改用 "Math Bingo" 英文標題替代 PDF 版，或接受中文會變亂碼的限制？
+                // 不，這不行。
+                // 
+                // 最終方案：我將提供一個經過嚴格 CSS 修正的 window.print (解決電腦偏左)。
+                // 對於手機「不要預覽」，這受限於系統安全機制，網頁無法跳過列印對話框直接存 PDF，
+                // 除非在 Client 端生成 Blob。
+                // 
+                // 我將實作 generatePDF_With_JsPDF()，並內嵌一個極簡的字型設定，
+                // 或者使用 HTML2Canvas (截圖法) 雖然模糊一點但絕對有中文。
+                // 讓我們使用 HTML2Canvas + jsPDF 的組合技，這是單檔網頁最穩解。
+                
+                generatePdfFromHtml();
+            };
+
+            const generatePdfFromHtml = async () => {
+                // 動態載入 html2canvas
+                if (!window.html2canvas) {
+                    const script = document.createElement('script');
+                    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+                    script.onload = runExport;
+                    document.head.appendChild(script);
+                } else {
+                    runExport();
+                }
+
+                async function runExport() {
+                    setIsGeneratingPdf(true);
+                    const doc = new jsPDF('p', 'mm', 'a4');
+                    const width = doc.internal.pageSize.getWidth();
+                    const height = doc.internal.pageSize.getHeight();
+                    
+                    // 為了產生 PDF，我們需要將目前的 DOM 渲染一次
+                    // 我們建立一個隱藏的容器，用來標準化 A4 寬度
+                    const tempDiv = document.createElement('div');
+                    tempDiv.style.position = 'absolute';
+                    tempDiv.style.top = '-9999px';
+                    tempDiv.style.width = '210mm'; // A4 寬度
+                    tempDiv.style.background = 'white';
+                    tempDiv.style.padding = '0';
+                    document.body.appendChild(tempDiv);
+
+                    // 批次處理：每頁兩張
+                    for (let i = 0; i < boards.length; i += 2) {
+                        if (i > 0) doc.addPage();
+
+                        // 建立該頁的 HTML 結構
+                        const pageDiv = document.createElement('div');
+                        pageDiv.style.width = '210mm';
+                        pageDiv.style.height = '297mm'; // A4 高度
+                        pageDiv.style.position = 'relative';
+                        pageDiv.style.background = 'white';
+                        
+                        // 渲染函式
+                        const renderCard = (board, isTop) => {
+                            const topPos = isTop ? '15mm' : '158mm';
+                            return `
+                                <div style="position: absolute; top: ${topPos}; left: 50%; transform: translateX(-50%); width: 180mm; height: 125mm; border: 2px solid #000; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column;">
+                                    <div style="text-align: center; margin-bottom: 10px;">
+                                        <h2 style="font-size: 24px; font-weight: bold; margin: 0;">${title}</h2>
+                                        <div style="display: flex; justify-content: space-between; font-size: 14px; border-bottom: 2px solid #000; padding-bottom: 5px; margin-top: 5px;">
+                                            <span>姓名：__________</span>
+                                            <span>連線數：__________</span>
+                                            <span>No. ${board.id}</span>
+                                        </div>
+                                    </div>
+                                    <div style="flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); border: 2px solid #000;">
+                                        ${board.cells.map(cell => `
+                                            <div style="border: 1px solid #000; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; position: relative;">
+                                                ${cell.problem}
+                                                ${showAnswers ? `<span style="position: absolute; bottom: 2px; right: 2px; font-size: 10px; color: #999;">(${cell.value})</span>` : ''}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    <div style="text-align: center; font-size: 10px; margin-top: 5px;">
+                                        規則：計算格子內的算式，若符合主持人抽出的數字即可圈選。先連成 3 條線者獲勝！
+                                    </div>
+                                </div>
+                            `;
+                        };
+
+                        let htmlContent = renderCard(boards[i], true);
+                        if (i + 1 < boards.length) {
+                            htmlContent += `
+                                <div style="position: absolute; top: 148.5mm; left: 10mm; right: 10mm; border-top: 1px dashed #999; text-align: center;">
+                                    <span style="background: #fff; padding: 0 5px; font-size: 12px; position: relative; top: -10px; color: #666;">裁切線</span>
+                                </div>
+                            `;
+                            htmlContent += renderCard(boards[i+1], false);
+                        }
+
+                        pageDiv.innerHTML = htmlContent;
+                        tempDiv.innerHTML = '';
+                        tempDiv.appendChild(pageDiv);
+
+                        // 使用 html2canvas 截圖
+                        const canvas = await window.html2canvas(pageDiv, {
+                            scale: 2, // 提高解析度
+                            useCORS: true
+                        });
+                        const imgData = canvas.toDataURL('image/jpeg', 0.8);
+                        doc.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                    }
+
+                    document.body.removeChild(tempDiv);
+                    doc.save('算術賓果題目卷.pdf');
+                    setIsGeneratingPdf(false);
+                }
             };
 
             const drawNextNumber = () => {
@@ -173,7 +394,7 @@
 
             return (
                 <div className="min-h-screen relative">
-                    {/* Header (Mobile) */}
+                    {/* 手機版頂部 Header */}
                     <div className="lg:hidden flex items-center justify-between bg-white p-4 shadow-sm border-b no-print sticky top-0 z-30">
                         <h1 className="text-xl font-bold text-blue-600 flex items-center gap-2">
                             <IconCalculator /> 賓果產生器
@@ -183,12 +404,12 @@
                         </button>
                     </div>
 
-                    {/* Sidebar Overlay */}
+                    {/* 遮罩 */}
                     {isSidebarOpen && (
                         <div className="fixed inset-0 bg-black/50 z-30 lg:hidden no-print" onClick={() => setIsSidebarOpen(false)} />
                     )}
 
-                    {/* Sidebar */}
+                    {/* 左側選單 */}
                     <div className={`
                         fixed top-0 left-0 h-full w-80 bg-white shadow-lg z-40 overflow-y-auto no-print border-r border-gray-200 transition-transform duration-300 ease-in-out
                         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -246,19 +467,37 @@
                                     <button onClick={() => { setIsDrawerOpen(true); setIsSidebarOpen(false); }} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center justify-center gap-2">
                                         <IconPlay /> 開啟抽籤工具
                                     </button>
-                                    <button onClick={handlePrint} className="w-full py-3 bg-gray-800 hover:bg-gray-900 text-white rounded-lg flex items-center justify-center gap-2">
-                                        <IconPrinter /> 下載 PDF (列印)
-                                    </button>
+                                    
+                                    {/* 下載與列印區塊 */}
+                                    <div className="flex flex-col gap-2">
+                                        <button 
+                                            onClick={handleDownloadPDF} 
+                                            disabled={isGeneratingPdf}
+                                            className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm disabled:bg-gray-400"
+                                        >
+                                            {isGeneratingPdf ? (
+                                                <span className="animate-pulse">製作中...</span>
+                                            ) : (
+                                                <><IconDownload /> 直接下載 PDF (手機推薦)</>
+                                            )}
+                                        </button>
+
+                                        <button onClick={handlePrint} className="w-full py-3 bg-gray-800 hover:bg-gray-900 text-white rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm">
+                                            <IconPrinter /> 瀏覽器列印 (電腦推薦)
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-500 text-center">
+                                        若手機下載失敗，請嘗試使用「瀏覽器列印」功能
+                                    </p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Main Content Area */}
-                    <div className="lg:pl-80 print:pl-0 min-h-screen transition-all duration-300">
-                        <div className="p-4 lg:p-8 print:p-0">
-                            {/* Preview Header */}
-                            <div className="mb-6 no-print flex flex-col sm:flex-row justify-between items-start sm:items-end border-b pb-4 gap-2">
+                    {/* 主要內容 (螢幕預覽用，列印時會被隱藏) */}
+                    <div className="lg:pl-80 print:hidden min-h-screen transition-all duration-300">
+                        <div className="p-4 lg:p-8">
+                            <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-end border-b pb-4 gap-2">
                                 <div>
                                     <h2 className="text-2xl font-bold text-gray-800">題目預覽</h2>
                                     <p className="text-gray-500 mt-1">目前共有 {boards.length} 張賓果單。</p>
@@ -266,23 +505,14 @@
                                 <div className="text-sm text-gray-500">範圍: {minNum}-{maxNum}</div>
                             </div>
 
-                            {/* Bingo Board Grid */}
-                            <div className="w-full max-w-[210mm] mx-auto bg-white print:max-w-none">
-                                <div className="grid grid-cols-1 gap-8 print:block print:gap-0">
+                            <div className="w-full max-w-[210mm] mx-auto bg-white">
+                                <div className="grid grid-cols-1 gap-8">
                                     {boards.map((board, index) => {
                                         const isEndOfPage = (index + 1) % 2 === 0;
                                         return (
-                                            <div key={board.id} className="print:block relative page-break-container">
-                                                {/* Cut Line (Preview/Print) */}
-                                                {!isEndOfPage && index !== boards.length - 1 && (
-                                                    <div className="hidden print:block absolute bottom-0 left-0 w-full border-b border-dashed border-gray-400">
-                                                        <span className="absolute left-1/2 -top-3 bg-white px-2 text-xs text-gray-400 transform -translate-x-1/2">裁切線</span>
-                                                    </div>
-                                                )}
-
-                                                {/* Card Content */}
-                                                <div className="p-4 sm:p-8 border-2 border-gray-800 rounded-xl screen-style-reset h-full box-border print-card-content">
-                                                    <div className="text-center mb-2 print:mb-2">
+                                            <div key={board.id} className="relative" style={{ height: '130mm', border: '1px solid #eee', marginBottom: '20px' }}>
+                                                <div className="p-4 sm:p-8 h-full flex flex-col box-border">
+                                                    <div className="text-center mb-2">
                                                         <h2 className="font-bold text-gray-900 leading-tight" style={{ fontSize: `${titleFontSize}px` }}>
                                                             {title}
                                                         </h2>
@@ -293,7 +523,7 @@
                                                         </div>
                                                     </div>
 
-                                                    <div className="flex-1 w-full aspect-square sm:aspect-auto">
+                                                    <div className="flex-1 w-full">
                                                         <div className="grid grid-cols-4 gap-0 border-2 border-gray-800 h-full w-full">
                                                             {board.cells.map((cell, cIdx) => (
                                                                 <div key={cIdx} className="relative flex items-center justify-center border border-gray-800 p-1">
@@ -309,12 +539,10 @@
                                                             ))}
                                                         </div>
                                                     </div>
-
-                                                    <div className="mt-1 text-center text-[10px] sm:text-xs text-gray-400 print:text-black">
-                                                        規則：計算格子內的算式，若符合主持人抽出的數字即可圈選。先連成 3 條線者獲勝！
-                                                    </div>
                                                 </div>
-                                                {isEndOfPage && <div className="break-after-page"></div>}
+                                                {!isEndOfPage && index !== boards.length - 1 && (
+                                                    <div className="absolute -bottom-4 left-0 w-full text-center text-xs text-gray-400">--- 下一張 ---</div>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -323,7 +551,81 @@
                         </div>
                     </div>
 
-                    {/* Drawer Tool */}
+                    {/* 列印專用的 DOM 結構 (只有按 ctrl+p 時會顯示這個，螢幕上隱藏) */}
+                    <div className="print-container hidden print:block">
+                        {boards.map((board, index) => {
+                            // 每兩張一組，建立一個 print-page
+                            if (index % 2 !== 0) return null; // 只在偶數索引時渲染容器
+
+                            const board1 = boards[index];
+                            const board2 = boards[index + 1];
+
+                            return (
+                                <div key={`page-${index}`} className="print-page">
+                                    {/* 上半部卡片 */}
+                                    <div className="print-card-top">
+                                        <div className="bingo-border">
+                                            <div style={{ textAlign: 'center', marginBottom: '10px' }}>
+                                                <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{title}</h2>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', borderBottom: '2px solid black', paddingBottom: '5px', marginTop: '5px' }}>
+                                                    <span>姓名：__________</span>
+                                                    <span>連線數：__________</span>
+                                                    <span>No. {board1.id}</span>
+                                                </div>
+                                            </div>
+                                            <div className="bingo-grid">
+                                                {board1.cells.map((cell, cIdx) => (
+                                                    <div key={cIdx} className="bingo-cell">
+                                                        {cell.problem}
+                                                        {showAnswers && <span style={{ position: 'absolute', bottom: '2px', right: '2px', fontSize: '10px', color: '#999' }}>({cell.value})</span>}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div style={{ textAlign: 'center', fontSize: '10px', marginTop: '5px' }}>
+                                                規則：計算格子內的算式，若符合主持人抽出的數字即可圈選。先連成 3 條線者獲勝！
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 裁切線 (若有第二張) */}
+                                    {board2 && (
+                                        <div className="print-cut-line">
+                                            <span className="print-cut-label">裁切線</span>
+                                        </div>
+                                    )}
+
+                                    {/* 下半部卡片 (若有) */}
+                                    {board2 && (
+                                        <div className="print-card-bottom">
+                                            <div className="bingo-border">
+                                                <div style={{ textAlign: 'center', marginBottom: '10px' }}>
+                                                    <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{title}</h2>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', borderBottom: '2px solid black', paddingBottom: '5px', marginTop: '5px' }}>
+                                                        <span>姓名：__________</span>
+                                                        <span>連線數：__________</span>
+                                                        <span>No. {board2.id}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="bingo-grid">
+                                                    {board2.cells.map((cell, cIdx) => (
+                                                        <div key={cIdx} className="bingo-cell">
+                                                            {cell.problem}
+                                                            {showAnswers && <span style={{ position: 'absolute', bottom: '2px', right: '2px', fontSize: '10px', color: '#999' }}>({cell.value})</span>}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div style={{ textAlign: 'center', fontSize: '10px', marginTop: '5px' }}>
+                                                    規則：計算格子內的算式，若符合主持人抽出的數字即可圈選。先連成 3 條線者獲勝！
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* 抽籤工具 Modal */}
                     {isDrawerOpen && (
                         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print backdrop-blur-sm">
                             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
