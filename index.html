@@ -13,39 +13,56 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
-        /* --- 列印與 PDF 核心修正 --- */
+        /* --- 列印與 PDF 核心修正 (針對手機與電腦版面優化) --- */
         @media print {
             @page {
-                size: A4 portrait; /* 強制直向 */
-                margin: 0;         /* 嘗試清除邊界，但手機通常會忽略 */
+                size: A4 portrait;
+                margin: 5mm; /* 設定極小邊界，讓瀏覽器自己決定安全範圍 */
             }
             body {
                 background: white;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
+                width: 100%;
+                margin: 0;
+                padding: 0;
             }
             .no-print {
                 display: none !important;
             }
-            /* 修正重點：高度縮減以容納手機邊界 */
+            
+            /* 1. 外層容器：負責佔位與置中 */
             .page-break-container {
-                height: 135mm;      /* 從 148.5mm 改為 135mm，預留邊界空間 */
-                width: 100%;        /* 讓寬度自適應列印範圍 */
-                max-width: 210mm;
-                box-sizing: border-box;
-                page-break-inside: avoid; /* 禁止從中間切斷 */
-                padding: 5mm;       /*稍微縮小內距*/
-                margin: 0 auto;     /* 置中 */
+                height: 130mm;      /* 縮小高度至 130mm (130*2=260mm)，預留 37mm 給手機強制邊界，確保一頁兩張 */
+                width: 100%;
+                display: flex;      /* 關鍵：使用 Flexbox */
+                justify-content: center; /* 水平置中 */
+                align-items: center;     /* 垂直置中 */
+                page-break-inside: avoid;
+                break-inside: avoid;
             }
+
+            /* 2. 內層卡片：實際內容與邊框 */
+            .print-card-content {
+                width: 180mm;       /* 固定寬度，確保在 A4 (210mm) 上左右留白均衡 */
+                height: 120mm;      /* 固定高度，確保內容不溢出 */
+                border: 2px solid #1f2937 !important; /* 強制顯示邊框 */
+                border-radius: 12px;
+                padding: 10px;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+            }
+
             .break-after-page {
                 page-break-after: always;
             }
-            /* 強制內容垂直置中，避免縮減高度後版面跑掉 */
-            .print-vertical-center {
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                height: 100%;
+            
+            /* 隱藏原本螢幕用的外距與邊框，避免干擾列印樣式 */
+            .screen-style-reset {
+                border: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
             }
         }
     </style>
@@ -104,8 +121,8 @@
             const [showAnswers, setShowAnswers] = useState(false);
             
             const [boards, setBoards] = useState([]);
-            const [isDrawerOpen, setIsDrawerOpen] = useState(false); // 抽籤工具
-            const [isSidebarOpen, setIsSidebarOpen] = useState(false); // 手機版側邊選單
+            const [isDrawerOpen, setIsDrawerOpen] = useState(false); 
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
             
             const [drawPool, setDrawPool] = useState([]);
             const [currentDraw, setCurrentDraw] = useState(null);
@@ -128,7 +145,6 @@
                 }
                 setBoards(newBoards);
                 resetDrawTool(fullRange);
-                // 手機版產生後自動收合選單
                 if (window.innerWidth < 1024) setIsSidebarOpen(false);
             };
 
@@ -157,7 +173,7 @@
 
             return (
                 <div className="min-h-screen relative">
-                    {/* 手機版頂部 Header (包含漢堡選單) */}
+                    {/* Header (Mobile) */}
                     <div className="lg:hidden flex items-center justify-between bg-white p-4 shadow-sm border-b no-print sticky top-0 z-30">
                         <h1 className="text-xl font-bold text-blue-600 flex items-center gap-2">
                             <IconCalculator /> 賓果產生器
@@ -167,18 +183,17 @@
                         </button>
                     </div>
 
-                    {/* 遮罩 (手機版選單打開時顯示) */}
+                    {/* Sidebar Overlay */}
                     {isSidebarOpen && (
                         <div className="fixed inset-0 bg-black/50 z-30 lg:hidden no-print" onClick={() => setIsSidebarOpen(false)} />
                     )}
 
-                    {/* 左側控制面板 (響應式調整) */}
+                    {/* Sidebar */}
                     <div className={`
                         fixed top-0 left-0 h-full w-80 bg-white shadow-lg z-40 overflow-y-auto no-print border-r border-gray-200 transition-transform duration-300 ease-in-out
                         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
                     `}>
                         <div className="p-6 relative">
-                            {/* 手機版關閉按鈕 */}
                             <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden absolute top-4 right-4 p-2 text-gray-500 hover:bg-gray-100 rounded">
                                 <IconX />
                             </button>
@@ -188,7 +203,6 @@
                                     <IconCalculator />
                                     算術賓果產生器
                                 </h1>
-                                {/* 作者資訊 */}
                                 <div className="text-sm text-gray-600 space-y-1.5 pl-1 border-l-2 border-blue-100 ml-1">
                                     <p>設計者：<a href="https://www.facebook.com/chungmenghsiu" target="_blank" className="text-blue-500 hover:underline">鍾孟修 職能治療師</a></p>
                                     <p>粉絲專頁：<a href="https://www.facebook.com/profile.php?id=100063748491881" target="_blank" className="text-blue-500 hover:underline">鍾孟修Matt-職能治療師</a></p>
@@ -240,9 +254,10 @@
                         </div>
                     </div>
 
-                    {/* 主要預覽區域 */}
+                    {/* Main Content Area */}
                     <div className="lg:pl-80 print:pl-0 min-h-screen transition-all duration-300">
                         <div className="p-4 lg:p-8 print:p-0">
+                            {/* Preview Header */}
                             <div className="mb-6 no-print flex flex-col sm:flex-row justify-between items-start sm:items-end border-b pb-4 gap-2">
                                 <div>
                                     <h2 className="text-2xl font-bold text-gray-800">題目預覽</h2>
@@ -251,20 +266,22 @@
                                 <div className="text-sm text-gray-500">範圍: {minNum}-{maxNum}</div>
                             </div>
 
+                            {/* Bingo Board Grid */}
                             <div className="w-full max-w-[210mm] mx-auto bg-white print:max-w-none">
                                 <div className="grid grid-cols-1 gap-8 print:block print:gap-0">
                                     {boards.map((board, index) => {
                                         const isEndOfPage = (index + 1) % 2 === 0;
                                         return (
                                             <div key={board.id} className="print:block relative page-break-container">
-                                                {/* 手機版/預覽版切割線 (列印隱藏或由 CSS 控制) */}
+                                                {/* Cut Line (Preview/Print) */}
                                                 {!isEndOfPage && index !== boards.length - 1 && (
                                                     <div className="hidden print:block absolute bottom-0 left-0 w-full border-b border-dashed border-gray-400">
                                                         <span className="absolute left-1/2 -top-3 bg-white px-2 text-xs text-gray-400 transform -translate-x-1/2">裁切線</span>
                                                     </div>
                                                 )}
 
-                                                <div className="p-4 sm:p-8 border-2 border-gray-800 rounded-xl print:border-0 print:p-0 print:rounded-none h-full box-border print-vertical-center">
+                                                {/* Card Content */}
+                                                <div className="p-4 sm:p-8 border-2 border-gray-800 rounded-xl screen-style-reset h-full box-border print-card-content">
                                                     <div className="text-center mb-2 print:mb-2">
                                                         <h2 className="font-bold text-gray-900 leading-tight" style={{ fontSize: `${titleFontSize}px` }}>
                                                             {title}
@@ -306,7 +323,7 @@
                         </div>
                     </div>
 
-                    {/* 抽籤工具 Modal */}
+                    {/* Drawer Tool */}
                     {isDrawerOpen && (
                         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print backdrop-blur-sm">
                             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
